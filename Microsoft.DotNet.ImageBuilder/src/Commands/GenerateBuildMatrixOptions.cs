@@ -6,12 +6,12 @@ using System.CommandLine;
 
 namespace Microsoft.DotNet.ImageBuilder.Commands
 {
-    public class GenerateBuildQueueOptions : Options
+    public class GenerateBuildMatrixOptions : Options
     {
-        protected override string CommandHelp => "Generate the VSTS build queue for building the images";
-        protected override string CommandName => "generateBuildQueue";
+        protected override string CommandHelp => "Generate the VSTS build matrix for building the images";
+        protected override string CommandName => "generateBuildMatrix";
 
-        public GenerateBuildQueueOptions() : base()
+        public GenerateBuildMatrixOptions() : base()
         {
         }
     }
