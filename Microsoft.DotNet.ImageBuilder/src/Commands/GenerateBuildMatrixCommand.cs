@@ -29,6 +29,39 @@ namespace Microsoft.DotNet.ImageBuilder.Commands
             return Task.CompletedTask;
         }
 
+        private void AddBuildLegs(MatrixInfo matrix, string[] matrixNameParts, IGrouping<dynamic, PlatformInfo> platformGrouping)
+        {
+            IEnumerable<IEnumerable<PlatformInfo>> subgraphs = platformGrouping.GetCompleteSubgraphs(GetPlatformDependencies);
+            foreach (IEnumerable<PlatformInfo> subgraph in subgraphs)
+            {
+                string[] dockerfilePaths = subgraph
+                    .Select(platform => platform.Model.Dockerfile)
+                    .ToArray();
+                LegInfo leg = new LegInfo() { Name = FormatLegName(dockerfilePaths, matrixNameParts) };
+                matrix.Legs.Add(leg);
+
+                string pathArgs = dockerfilePaths
+                    .Select(path => $"--path {path}")
+                    .Aggregate((working, next) => $"{working} {next}");
+                leg.Variables.Add(("imageBuilderPaths", pathArgs));
+            }
+        }
+
+        private void AddTestLegs(MatrixInfo matrix, string[] matrixNameParts, IGrouping<dynamic, PlatformInfo> platformGrouping)
+        {
+            var versionGrouping = platformGrouping
+                .GroupBy(platform => new { DotNetVersion = platform.DockerfilePath.Split('/')[0], OsVersion = platform.DockerfilePath.Split('/')[2].TrimEnd("-slim")} )
+                .OrderByDescending(grouping => grouping.Key.DotNetVersion)
+                .ThenBy(grouping => grouping.Key.OsVersion);
+            foreach (var foo in versionGrouping)
+            {
+                LegInfo leg = new LegInfo() { Name = $"{foo.Key.DotNetVersion}-{foo.Key.OsVersion}" };
+                matrix.Legs.Add(leg);
+                leg.Variables.Add(("dotnetVersion", foo.Key.DotNetVersion));
+                leg.Variables.Add(("osVersion", foo.Key.OsVersion));
+            }
+        }
+
         private static void EmitVstsVariables(IEnumerable<MatrixInfo> matrices)
         {
             // Emit the special syntax to set a VSTS build definition matrix variable
@@ -93,27 +126,21 @@ namespace Microsoft.DotNet.ImageBuilder.Commands
             {
                 string[] matrixNameParts =
                 {
-                    "buildMatrix",
+                    $"{Options.MatrixType.ToString().ToLowerInvariant()}Matrix",
                     platformGrouping.Key.OS == OS.Windows ? platformGrouping.Key.OsVersion : platformGrouping.Key.OS.ToString(),
                     platformGrouping.Key.Architecture.GetDisplayName(useLongNames: true)
                 };
                 MatrixInfo matrix = new MatrixInfo() { Name = FormatMatrixName(matrixNameParts) };
                 matrices.Add(matrix);
 
-                // Emit legs and their variables
-                IEnumerable<IEnumerable<PlatformInfo>> subgraphs = platformGrouping.GetCompleteSubgraphs(GetPlatformDependencies);
-                foreach (IEnumerable<PlatformInfo> subgraph in subgraphs)
+                switch (Options.MatrixType)
                 {
-                    string[] dockerfilePaths = subgraph
-                        .Select(platform => platform.Model.Dockerfile)
-                        .ToArray();
-                    LegInfo leg = new LegInfo() { Name = FormatLegName(dockerfilePaths, matrixNameParts) };
-                    matrix.Legs.Add(leg);
-
-                    string pathArgs = dockerfilePaths
-                        .Select(path => $"--path {path}")
-                        .Aggregate((working, next) => $"{working} {next}");
-                    leg.Variables.Add(("imageBuilderPaths", pathArgs));
+                    case MatrixType.Build:
+                        AddBuildLegs(matrix, matrixNameParts, platformGrouping);
+                        break;
+                    case MatrixType.Test:
+                        AddTestLegs(matrix, matrixNameParts, platformGrouping);
+                        break;
                 }
             }
 
